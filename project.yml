@@ -1,0 +1,42 @@
+name: VoidBrowser
+options:
+  bundleIdPrefix: com.void
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    IPHONEOS_DEPLOYMENT_TARGET: "16.0"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGN_IDENTITY: ""
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  VoidBrowser:
+    type: application
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - path: VoidBrowser
+        excludes:
+          - "Info.plist"
+          - "Resources/Wallpapers"
+          - "Resources/Fonts"
+          - "Resources/Help"
+      - path: VoidBrowser/Resources/Wallpapers
+        type: folder
+      - path: VoidBrowser/Resources/Fonts
+        type: folder
+      - path: VoidBrowser/Resources/Help
+        type: folder
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.void.browser
+        INFOPLIST_FILE: VoidBrowser/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        TARGETED_DEVICE_FAMILY: "1,2"
+        PRODUCT_NAME: VoidBrowser
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
