@@ -16,7 +16,7 @@ struct HelpView: View {
                                 .foregroundStyle(AeroColor.accent).rotationEffect(.degrees(45))
                         }
                         Text("Aero").font(.system(size: 24, weight: .bold)).foregroundStyle(AeroColor.textPrimary)
-                        Text("Версия 1.1").font(.system(size: 13)).foregroundStyle(AeroColor.textTertiary)
+                        Text("Версия 1.2").font(.system(size: 13)).foregroundStyle(AeroColor.textTertiary)
                         Text("Быстрый, минималистичный и приватный браузер на WebKit.")
                             .font(.system(size: 13)).foregroundStyle(AeroColor.textSecondary)
                             .multilineTextAlignment(.center)

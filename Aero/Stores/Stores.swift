@@ -15,6 +15,7 @@ final class SettingsStore: ObservableObject {
     // Ad blocking
     @Published var adBlockEnabled: Bool { didSet { d.set(adBlockEnabled, forKey: "adBlock") } }
     @Published var cosmeticEnabled: Bool { didSet { d.set(cosmeticEnabled, forKey: "cosmetic") } }
+    @Published var enabledLists: Set<String> { didSet { d.set(Array(enabledLists), forKey: "enabledLists") } }
 
     // Privacy / anti-fingerprint (each independently toggleable)
     @Published var pCanvas: Bool { didSet { d.set(pCanvas, forKey: "pCanvas") } }
@@ -38,6 +39,8 @@ final class SettingsStore: ObservableObject {
         showWallpaper = d.object(forKey: "showWallpaper") as? Bool ?? true
         adBlockEnabled = d.object(forKey: "adBlock") as? Bool ?? true
         cosmeticEnabled = d.object(forKey: "cosmetic") as? Bool ?? true
+        if let arr = d.array(forKey: "enabledLists") as? [String] { enabledLists = Set(arr) }
+        else { enabledLists = ["easylist", "easyprivacy", "annoyance", "ru"] }
         pCanvas = d.bool(forKey: "pCanvas")
         pWebGL = d.bool(forKey: "pWebGL")
         pAudio = d.bool(forKey: "pAudio")
@@ -95,6 +98,21 @@ final class BookmarkStore: ObservableObject {
     }
     func remove(at offsets: IndexSet) { items.remove(atOffsets: offsets); save() }
     func clear() { items.removeAll(); save() }
+
+    /// Bulk-add imported entries (skips duplicates). Returns number added.
+    @discardableResult
+    func addMany(_ entries: [(title: String, url: String)]) -> Int {
+        var added = 0
+        for e in entries.reversed() {
+            guard let u = URL(string: e.url), u.scheme?.hasPrefix("http") == true else { continue }
+            if contains(e.url) { continue }
+            let t = e.title.trimmingCharacters(in: .whitespacesAndNewlines)
+            items.insert(Bookmark(title: t.isEmpty ? URLBuilder.prettyHost(e.url) : t, url: e.url), at: 0)
+            added += 1
+        }
+        save()
+        return added
+    }
 }
 
 // MARK: - History store
@@ -117,6 +135,18 @@ final class HistoryStore: ObservableObject {
     }
     func remove(at offsets: IndexSet) { items.remove(atOffsets: offsets); save() }
     func clear() { items.removeAll(); save() }
+
+    /// Merge imported history entries (dedupe by url, newest kept, capped).
+    func addMany(_ entries: [HistoryItem]) {
+        var urls = Set(items.map { $0.url })
+        var merged = items
+        for e in entries where !urls.contains(e.url) {
+            merged.append(e); urls.insert(e.url)
+        }
+        merged.sort { $0.date > $1.date }
+        items = Array(merged.prefix(limit))
+        save()
+    }
 }
 
 // MARK: - Pending ad report (awaiting user confirmation)
@@ -161,7 +191,7 @@ final class BrowserStore: ObservableObject {
         guard let settings else { return }
         let cfg = settings.privacyConfig(incognito: incognito)
         let cosmetic = adblock?.cosmeticJS(enabled: settings.adBlockEnabled, cosmetic: settings.cosmeticEnabled) ?? ""
-        tab.configure(privacy: cfg, ruleList: adblock?.ruleList, cosmeticJS: cosmetic, adblockEnabled: settings.adBlockEnabled)
+        tab.configure(privacy: cfg, ruleLists: adblock?.ruleLists ?? [], cosmeticJS: cosmetic, adblockEnabled: settings.adBlockEnabled)
     }
 
     /// Re-apply current privacy/adblock config to all tabs (no recompile).
@@ -172,7 +202,7 @@ final class BrowserStore: ObservableObject {
     /// Recompile the ad-block rule list, then re-apply config to all tabs.
     func recompileAndReconfigure(reload: Bool) {
         guard let settings, let adblock else { return }
-        adblock.compile(enabled: settings.adBlockEnabled) { [weak self] in
+        adblock.rebuild(masterEnabled: settings.adBlockEnabled, enabledGroups: settings.enabledLists) { [weak self] in
             guard let self else { return }
             for tab in self.tabs {
                 self.applyConfig(to: tab)
@@ -196,6 +226,25 @@ final class BrowserStore: ObservableObject {
     }
 
     func select(_ tab: WebTab) { current?.captureSnapshot(); currentID = tab.id }
+
+    /// URLs of currently open (non-home) tabs — used by export.
+    var openTabURLs: [String] {
+        tabs.compactMap { t in
+            guard !t.isHome, let u = URL(string: t.urlString), u.scheme?.hasPrefix("http") == true else { return nil }
+            return t.urlString
+        }
+    }
+
+    /// Open a batch of URLs as new tabs (used by import).
+    @discardableResult
+    func openURLs(_ urls: [URL]) -> Int {
+        guard !urls.isEmpty else { return 0 }
+        for (i, u) in urls.enumerated() {
+            newTab(select: i == urls.count - 1, load: u)
+        }
+        showTabsOverview = false
+        return urls.count
+    }
 
     func close(_ tab: WebTab) {
         tab.stop()
@@ -236,7 +285,7 @@ final class BrowserStore: ObservableObject {
         // Refresh cosmetic script so the rule persists on future loads
         if let settings {
             let cosmetic = adblock.cosmeticJS(enabled: settings.adBlockEnabled, cosmetic: settings.cosmeticEnabled)
-            for tab in tabs { tab.configure(privacy: settings.privacyConfig(incognito: incognito), ruleList: adblock.ruleList, cosmeticJS: cosmetic, adblockEnabled: settings.adBlockEnabled) }
+            for tab in tabs { tab.configure(privacy: settings.privacyConfig(incognito: incognito), ruleLists: adblock.ruleLists, cosmeticJS: cosmetic, adblockEnabled: settings.adBlockEnabled) }
         }
     }
 

@@ -2,19 +2,92 @@ import Foundation
 import WebKit
 import Combine
 
-/// Aggressive but configurable ad/tracker blocking:
-///  • WKContentRuleList — blocks network requests to known ad/tracker domains + ad URL paths
-///  • Cosmetic filtering — injected CSS hides ad containers that slip through
-///  • User-reported rules — selectors captured via "Report ad" are hidden forever
+// MARK: - Block list manifest models
+struct BlockFileRef: Decodable, Hashable { let file: String; let rules: Int }
+struct BlockGroup: Decodable, Identifiable, Hashable {
+    let id: String
+    let title: String
+    let desc: String
+    let rules: Int
+    let files: [BlockFileRef]
+}
+struct BlockManifest: Decodable { let groups: [BlockGroup]; let total: Int }
+
+/// Comprehensive, configurable ad/tracker blocking.
+///  • Bundled filter lists (EasyList + EasyPrivacy + Annoyances + RU AdList),
+///    converted to WKContentRuleList JSON and compiled on device (cached).
+///  • Per-list toggles.
+///  • Cosmetic CSS injection for base selectors + user "Report ad" rules.
 final class AdBlockStore: ObservableObject {
+    // Compiled network/cosmetic rule lists currently active
+    @Published private(set) var ruleLists: [WKContentRuleList] = []
+    @Published private(set) var compiling: Bool = false
+    @Published private(set) var groups: [BlockGroup] = []
+    @Published private(set) var totalRules: Int = 0
+    @Published private(set) var activeRules: Int = 0
+
+    // User "Report ad" selectors
     @Published var reported: [ReportedAd] = []
-    @Published private(set) var ruleList: WKContentRuleList?
-    @Published private(set) var blockedSession: Int = 0   // soft counter (cosmetic hits)
 
     private let key = "reportedAds.v1"
-    private let listID = "aero-adblock-v1"
+    static let version = "v12"   // bump to force recompile after list updates
 
-    init() { loadReported() }
+    init() {
+        loadManifest()
+        loadReported()
+    }
+
+    // MARK: - Manifest
+    private func loadManifest() {
+        guard let url = Bundle.main.url(forResource: "manifest", withExtension: "json", subdirectory: "Blocklists"),
+              let data = try? Data(contentsOf: url),
+              let m = try? JSONDecoder().decode(BlockManifest.self, from: data) else { return }
+        groups = m.groups
+        totalRules = m.total
+    }
+
+    // MARK: - Compile / rebuild active lists
+    /// Compile (or load cached) the rule lists for the enabled groups, sequentially.
+    func rebuild(masterEnabled: Bool, enabledGroups: Set<String>, completion: @escaping () -> Void = {}) {
+        guard masterEnabled else {
+            DispatchQueue.main.async { self.ruleLists = []; self.activeRules = 0; self.compiling = false; completion() }
+            return
+        }
+        let active = groups.filter { enabledGroups.contains($0.id) }
+        let files = active.flatMap { $0.files }
+        let ruleCount = active.reduce(0) { $0 + $1.rules }
+        guard !files.isEmpty, let store = WKContentRuleListStore.default() else {
+            DispatchQueue.main.async { self.ruleLists = []; self.activeRules = 0; self.compiling = false; completion() }
+            return
+        }
+        DispatchQueue.main.async { self.compiling = true }
+        var collected: [WKContentRuleList] = []
+
+        func step(_ i: Int) {
+            if i >= files.count {
+                DispatchQueue.main.async {
+                    self.ruleLists = collected
+                    self.activeRules = ruleCount
+                    self.compiling = false
+                    completion()
+                }
+                return
+            }
+            let ref = files[i]
+            let base = (ref.file as NSString).deletingPathExtension
+            let identifier = "aero-\(base)-\(Self.version)"
+            store.lookUpContentRuleList(forIdentifier: identifier) { list, _ in
+                if let list { collected.append(list); step(i + 1); return }
+                guard let url = Bundle.main.url(forResource: base, withExtension: "json", subdirectory: "Blocklists"),
+                      let json = try? String(contentsOf: url, encoding: .utf8) else { step(i + 1); return }
+                store.compileContentRuleList(forIdentifier: identifier, encodedContentRuleList: json) { compiled, _ in
+                    if let compiled { collected.append(compiled) }
+                    step(i + 1)
+                }
+            }
+        }
+        step(0)
+    }
 
     // MARK: - Reported rules persistence
     func loadReported() {
@@ -24,9 +97,7 @@ final class AdBlockStore: ObservableObject {
         }
     }
     func saveReported() {
-        if let data = try? JSONEncoder().encode(reported) {
-            UserDefaults.standard.set(data, forKey: key)
-        }
+        if let data = try? JSONEncoder().encode(reported) { UserDefaults.standard.set(data, forKey: key) }
     }
     func addReported(host: String, selector: String, note: String = "") {
         let clean = selector.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -37,35 +108,6 @@ final class AdBlockStore: ObservableObject {
     }
     func removeReported(at offsets: IndexSet) { reported.remove(atOffsets: offsets); saveReported() }
     func clearReported() { reported.removeAll(); saveReported() }
-
-    // MARK: - Content rule list
-    func compile(enabled: Bool, completion: @escaping () -> Void) {
-        guard enabled else { ruleList = nil; completion(); return }
-        let json = Self.buildRulesJSON()
-        WKContentRuleListStore.default().compileContentRuleList(
-            forIdentifier: listID, encodedContentRuleList: json
-        ) { [weak self] list, error in
-            DispatchQueue.main.async {
-                if let list { self?.ruleList = list }
-                completion()
-            }
-        }
-    }
-
-    /// Build the WKContentRuleList JSON from ad domains + ad URL path patterns.
-    static func buildRulesJSON() -> String {
-        var rules: [String] = []
-        for d in adDomains {
-            let esc = d.replacingOccurrences(of: ".", with: "\\\\.")
-            // ^https?://(sub.)?domain  — blocks the domain and any subdomain
-            let f = "^https?://([^/]+\\\\.)?\(esc)"
-            rules.append("{\"action\":{\"type\":\"block\"},\"trigger\":{\"url-filter\":\"\(f)\",\"url-filter-is-case-sensitive\":false}}")
-        }
-        for p in pathPatterns {
-            rules.append("{\"action\":{\"type\":\"block\"},\"trigger\":{\"url-filter\":\"\(p)\",\"url-filter-is-case-sensitive\":false}}")
-        }
-        return "[" + rules.joined(separator: ",") + "]"
-    }
 
     // MARK: - Cosmetic filtering JS (base selectors + reported)
     func cosmeticJS(enabled: Bool, cosmetic: Bool) -> String {
@@ -113,7 +155,7 @@ final class AdBlockStore: ObservableObject {
         return "{" + parts.joined(separator: ",") + "}"
     }
 
-    // MARK: - High-precision base cosmetic selectors
+    // High-precision base cosmetic selectors (always-on supplement to the lists)
     static let baseSelectors: [String] = [
         "ins.adsbygoogle", ".adsbygoogle", "[id^=\"google_ads\"]", "[id^=\"div-gpt-ad\"]",
         "iframe[src*=\"doubleclick\"]", "iframe[src*=\"googlesyndication\"]", "iframe[src*=\"/ads/\"]",
@@ -122,42 +164,5 @@ final class AdBlockStore: ObservableObject {
         ".advertisement", ".advert", ".adsbox", ".sponsored-content", ".banner-ads", ".outbrain",
         ".taboola", "[id^=\"taboola\"]", "[class^=\"trc_\"]", ".OUTBRAIN", "#ad_position_box",
         "ins.adsbygoogle[data-ad-status]", "div[aria-label=\"Реклама\"]", "div[aria-label=\"Advertisement\"]"
-    ]
-
-    // MARK: - Ad URL path patterns
-    static let pathPatterns: [String] = [
-        "/pagead/", "/adservice/", "/adsystem/", "/adserver", "/banners?/", "/sponsorads/",
-        "/doubleclick/", "/ad-iframe", "/adframe", "/popunder", "/pop-under"
-    ]
-
-    // MARK: - Curated ad/tracker domains (blocked entirely)
-    static let adDomains: [String] = [
-        "doubleclick.net", "googlesyndication.com", "googleadservices.com", "google-analytics.com",
-        "googletagmanager.com", "googletagservices.com", "adservice.google.com", "pagead2.googlesyndication.com",
-        "adsystem.com", "adnxs.com", "advertising.com", "adcolony.com", "adform.net", "adroll.com",
-        "adsrvr.org", "amazon-adsystem.com", "criteo.com", "criteo.net", "outbrain.com", "taboola.com",
-        "taboolasyndication.com", "rubiconproject.com", "pubmatic.com", "openx.net", "casalemedia.com",
-        "moatads.com", "scorecardresearch.com", "quantserve.com", "quantcast.com", "exelator.com",
-        "bluekai.com", "mathtag.com", "bidswitch.net", "smartadserver.com", "yieldmo.com",
-        "contextweb.com", "gumgum.com", "sharethrough.com", "spotxchange.com", "spotx.tv",
-        "teads.tv", "districtm.io", "indexww.com", "3lift.com", "triplelift.com", "media.net",
-        "mgid.com", "revcontent.com", "propellerads.com", "popads.net", "popcash.net", "adsterra.com",
-        "exoclick.com", "juicyads.com", "trafficjunky.com", "hilltopads.net", "yllix.com",
-        "onclickads.net", "clickadu.com", "admaven.com", "mediavine.com", "ezoic.net", "ezoic.com",
-        "sovrn.com", "lijit.com", "districtm.ca", "rfihub.com", "rlcdn.com", "agkn.com",
-        "demdex.net", "everesttech.net", "adsymptotic.com", "tapad.com", "crwdcntrl.net",
-        "turn.com", "mookie1.com", "adtechus.com", "adtech.de", "yieldlab.net", "improvedigital.com",
-        "stickyadstv.com", "1rx.io", "loopme.com", "inmobi.com", "applovin.com", "unityads.unity3d.com",
-        "chartboost.com", "vungle.com", "supersonicads.com", "ironsrc.com", "mopub.com",
-        "facebook.com/tr", "connect.facebook.net", "ads-twitter.com", "analytics.twitter.com",
-        "ads.yahoo.com", "advertising.yahoo.com", "adtago.s3.amazonaws.com", "amplitude.com",
-        "mixpanel.com", "segment.com", "segment.io", "fullstory.com", "hotjar.com", "mouseflow.com",
-        "crazyegg.com", "optimizely.com", "newrelic.com", "nr-data.net", "branch.io", "appsflyer.com",
-        "kochava.com", "adjust.com", "singular.net", "yandex.ru/ads", "an.yandex.ru", "mc.yandex.ru",
-        "top-fwz1.mail.ru", "ad.mail.ru", "rambler.ru/ads", "vk.com/rtrg", "ads.vk.com",
-        "matomo.cloud", "chartbeat.com", "parsely.com", "permutive.com", "onesignal.com",
-        "pushwoosh.com", "pushcrew.com", "izooto.com", "sendpulse.com", "carbonads.com",
-        "buysellads.com", "adblade.com", "adsupply.com", "bidvertiser.com", "infolinks.com",
-        "vidoomy.com", "smartyads.com", "adpushup.com", "adingo.jp", "cxense.com", "zergnet.com"
     ]
 }

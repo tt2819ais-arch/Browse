@@ -34,7 +34,7 @@ final class WebTab: NSObject, ObservableObject, Identifiable, WKNavigationDelega
     private var privacyConfig = PrivacyConfig()
     private var cosmeticScript: String = ""
     private var adblockEnabled = true
-    private var currentRuleList: WKContentRuleList?
+    private var currentRuleLists: [WKContentRuleList] = []
 
     // Callbacks
     var onCommit: ((WebTab) -> Void)?
@@ -85,18 +85,18 @@ final class WebTab: NSObject, ObservableObject, Identifiable, WKNavigationDelega
     }
 
     // MARK: - Privacy / Ad-block configuration
-    func configure(privacy: PrivacyConfig, ruleList: WKContentRuleList?, cosmeticJS: String, adblockEnabled: Bool) {
+    func configure(privacy: PrivacyConfig, ruleLists: [WKContentRuleList], cosmeticJS: String, adblockEnabled: Bool) {
         self.privacyConfig = privacy
         self.cosmeticScript = cosmeticJS
         self.adblockEnabled = adblockEnabled
-        self.currentRuleList = ruleList
+        self.currentRuleLists = ruleLists
         rebuildUserContent()
     }
 
     private func rebuildUserContent() {
         ucc.removeAllUserScripts()
         ucc.removeAllContentRuleLists()
-        if adblockEnabled, let rl = currentRuleList { ucc.add(rl) }
+        if adblockEnabled { currentRuleLists.forEach { ucc.add($0) } }
 
         let privJS = PrivacyScripts.buildJS(privacyConfig)
         if !privJS.isEmpty {

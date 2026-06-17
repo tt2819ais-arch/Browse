@@ -6,6 +6,11 @@ struct AdBlockView: View {
     @EnvironmentObject var browser: BrowserStore
     @State private var info: InfoItem?
 
+    private func fmt(_ n: Int) -> String {
+        let f = NumberFormatter(); f.numberStyle = .decimal; f.groupingSeparator = " "
+        return f.string(from: NSNumber(value: n)) ?? "\(n)"
+    }
+
     var body: some View {
         ZStack {
             SheetBackground()
@@ -13,7 +18,7 @@ struct AdBlockView: View {
                 VStack(spacing: 22) {
                     GroupCard(title: "Защита") {
                         ToggleRow(symbol: "shield.lefthalf.filled", title: "Блокировать рекламу и трекеры",
-                                  subtitle: "\(AdBlockStore.adDomains.count) доменов в списке",
+                                  subtitle: "\(fmt(adblock.totalRules)) правил в фильтрах",
                                   isOn: Binding(get: { settings.adBlockEnabled }, set: { settings.adBlockEnabled = $0; browser.recompileAndReconfigure(reload: true) }),
                                   help: Self.blockInfo, onHelp: { info = $0 })
                         RowDivider()
@@ -21,6 +26,38 @@ struct AdBlockView: View {
                                   subtitle: "Косметическая фильтрация",
                                   isOn: Binding(get: { settings.cosmeticEnabled }, set: { settings.cosmeticEnabled = $0; browser.reapplyConfig(reload: true) }),
                                   help: Self.cosmeticInfo, onHelp: { info = $0 })
+                        if adblock.compiling {
+                            RowDivider()
+                            HStack(spacing: 12) {
+                                ProgressView().controlSize(.small)
+                                Text("Компиляция фильтров…").font(.system(size: 14)).foregroundStyle(AeroColor.textSecondary)
+                                Spacer()
+                            }.padding(.vertical, 11).padding(.horizontal, 14)
+                        } else if settings.adBlockEnabled {
+                            RowDivider()
+                            HStack(spacing: 12) {
+                                Image(systemName: "checkmark.shield.fill").font(.system(size: 15)).foregroundStyle(AeroColor.success).frame(width: 26)
+                                Text("Активно: \(fmt(adblock.activeRules)) правил").font(.system(size: 14, weight: .medium)).foregroundStyle(AeroColor.textPrimary)
+                                Spacer()
+                            }.padding(.vertical, 11).padding(.horizontal, 14)
+                        }
+                    }
+
+                    // Filter lists (per-list toggles)
+                    if !adblock.groups.isEmpty {
+                        GroupCard(title: "Списки фильтров") {
+                            ForEach(Array(adblock.groups.enumerated()), id: \.element.id) { idx, g in
+                                ToggleRow(symbol: "list.bullet.rectangle", title: g.title,
+                                          subtitle: "\(g.desc) · \(fmt(g.rules))",
+                                          isOn: Binding(
+                                            get: { settings.enabledLists.contains(g.id) },
+                                            set: { on in
+                                                if on { settings.enabledLists.insert(g.id) } else { settings.enabledLists.remove(g.id) }
+                                                browser.recompileAndReconfigure(reload: false)
+                                            }))
+                                if idx < adblock.groups.count - 1 { RowDivider() }
+                            }
+                        }
                     }
 
                     // Reported ads
@@ -80,6 +117,6 @@ struct AdBlockView: View {
         .sheet(item: $info) { InfoSheet(item: $0) }
     }
 
-    static let blockInfo = InfoItem(title: "Блокировка рекламы и трекеров", text: "Запросы к известным рекламным и следящим доменам полностью блокируются на сетевом уровне через нативный механизм WebKit. Это ускоряет загрузку и экономит трафик.", recommend: "Рекомендуем держать включённым.")
-    static let cosmeticInfo = InfoItem(title: "Косметическая фильтрация", text: "Прячет рекламные блоки, которые остались на странице (баннеры, рекламные вставки) с помощью CSS. Дополняет сетевую блокировку.", recommend: "Рекомендуем включить.")
+    static let blockInfo = InfoItem(title: "Блокировка рекламы и трекеров", text: "Aero использует полноценные фильтр-листы (EasyList, EasyPrivacy, RU AdList и список против раздражителей) — это сотни тысяч правил, как в AdGuard или uBlock. Запросы к рекламным и следящим доменам блокируются на сетевом уровне нативным механизмом WebKit, что ускоряет загрузку и экономит трафик.", recommend: "Рекомендуем держать включённым.")
+    static let cosmeticInfo = InfoItem(title: "Косметическая фильтрация", text: "Прячет рекламные блоки, которые остались на странице (баннеры, вставки) с помощью CSS. Дополняет сетевую блокировку.", recommend: "Рекомендуем включить.")
 }

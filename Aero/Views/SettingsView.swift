@@ -60,8 +60,15 @@ struct SettingsView: View {
                                 navLabel("hand.raised.fill", "Приватность", value: settings.anyPrivacyOn ? "вкл" : "выкл")
                             }
                             RowDivider()
-                            NavigationLink { AdBlockView().environmentObject(settings).environmentObject(adblock) } label: {
+                            NavigationLink { AdBlockView().environmentObject(settings).environmentObject(adblock).environmentObject(browser) } label: {
                                 navLabel("shield.lefthalf.filled", "Блокировка рекламы", value: settings.adBlockEnabled ? "вкл" : "выкл")
+                            }
+                        }
+
+                        // Import / export
+                        GroupCard(title: "Перенос данных") {
+                            NavigationLink { ImportExportView().environmentObject(bookmarks).environmentObject(history).environmentObject(browser) } label: {
+                                navLabel("arrow.up.arrow.down.square", "Импорт и экспорт", value: "Safari, файлы")
                             }
                         }
 
@@ -78,7 +85,7 @@ struct SettingsView: View {
 
                         // About
                         GroupCard(title: "О приложении") {
-                            NavigationLink { HelpView() } label: { navLabel("info.circle", "Справка и о приложении", value: "v1.1") }
+                            NavigationLink { HelpView() } label: { navLabel("info.circle", "Справка и о приложении", value: "v1.2") }
                         }
 
                         Spacer().frame(height: 30)

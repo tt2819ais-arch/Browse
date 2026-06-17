@@ -1,0 +1,77 @@
+{
+  "groups": [
+    {
+      "id": "easylist",
+      "title": "EasyList",
+      "desc": "Реклама — основной список",
+      "rules": 79180,
+      "files": [
+        {
+          "file": "easylist-00.json",
+          "rules": 45000
+        },
+        {
+          "file": "easylist-01.json",
+          "rules": 34180
+        }
+      ],
+      "net": 55529,
+      "cosmetic": 23064,
+      "exc": 587
+    },
+    {
+      "id": "easyprivacy",
+      "title": "EasyPrivacy",
+      "desc": "Трекеры и аналитика",
+      "rules": 55362,
+      "files": [
+        {
+          "file": "easyprivacy-00.json",
+          "rules": 45000
+        },
+        {
+          "file": "easyprivacy-01.json",
+          "rules": 10362
+        }
+      ],
+      "net": 54512,
+      "cosmetic": 28,
+      "exc": 823
+    },
+    {
+      "id": "annoyance",
+      "title": "Annoyances",
+      "desc": "Баннеры cookie, попапы, анти-адблок",
+      "rules": 47512,
+      "files": [
+        {
+          "file": "annoyance-00.json",
+          "rules": 45000
+        },
+        {
+          "file": "annoyance-01.json",
+          "rules": 2512
+        }
+      ],
+      "net": 3615,
+      "cosmetic": 43467,
+      "exc": 536
+    },
+    {
+      "id": "ru",
+      "title": "RU AdList",
+      "desc": "Рунет: RU/UA/KZ/UZ",
+      "rules": 25442,
+      "files": [
+        {
+          "file": "ru-00.json",
+          "rules": 25442
+        }
+      ],
+      "net": 14642,
+      "cosmetic": 10000,
+      "exc": 800
+    }
+  ],
+  "total": 207496
+}
