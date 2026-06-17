@@ -1,6 +1,6 @@
-name: VoidBrowser
+name: Aero
 options:
-  bundleIdPrefix: com.void
+  bundleIdPrefix: com.aero
   deploymentTarget:
     iOS: "16.0"
   createIntermediateGroups: true
@@ -11,32 +11,32 @@ settings:
     CODE_SIGN_STYLE: Manual
     CODE_SIGN_IDENTITY: ""
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "1.0"
-    CURRENT_PROJECT_VERSION: "1"
+    MARKETING_VERSION: "1.1"
+    CURRENT_PROJECT_VERSION: "2"
 targets:
-  VoidBrowser:
+  Aero:
     type: application
     platform: iOS
     deploymentTarget: "16.0"
     sources:
-      - path: VoidBrowser
+      - path: Aero
         excludes:
           - "Info.plist"
           - "Resources/Wallpapers"
           - "Resources/Fonts"
           - "Resources/Help"
-      - path: VoidBrowser/Resources/Wallpapers
+      - path: Aero/Resources/Wallpapers
         type: folder
-      - path: VoidBrowser/Resources/Fonts
+      - path: Aero/Resources/Fonts
         type: folder
-      - path: VoidBrowser/Resources/Help
+      - path: Aero/Resources/Help
         type: folder
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.void.browser
-        INFOPLIST_FILE: VoidBrowser/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: com.aero.browser
+        INFOPLIST_FILE: Aero/Info.plist
         GENERATE_INFOPLIST_FILE: NO
         TARGETED_DEVICE_FAMILY: "1,2"
-        PRODUCT_NAME: VoidBrowser
+        PRODUCT_NAME: Aero
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor

@@ -18,12 +18,22 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate
 
+      - name: Detect project & scheme
+        id: detect
+        run: |
+          set -eo pipefail
+          PROJ=$(ls -d *.xcodeproj | head -n 1)
+          SCHEME=$(xcodebuild -list -project "$PROJ" -json | python3 -c "import json,sys;print(json.load(sys.stdin)['project']['schemes'][0])")
+          echo "PROJ=$PROJ" >> "$GITHUB_OUTPUT"
+          echo "SCHEME=$SCHEME" >> "$GITHUB_OUTPUT"
+          echo "Detected project=$PROJ scheme=$SCHEME"
+
       - name: Build (unsigned archive)
         run: |
           set -eo pipefail
           xcodebuild \
-            -project VoidBrowser.xcodeproj \
-            -scheme VoidBrowser \
+            -project "${{ steps.detect.outputs.PROJ }}" \
+            -scheme "${{ steps.detect.outputs.SCHEME }}" \
             -configuration Release \
             -sdk iphoneos \
             -derivedDataPath build \
@@ -44,12 +54,12 @@ jobs:
           echo "App bundle size:"; du -sh "$APP_PATH"
           rm -rf Payload && mkdir -p Payload
           cp -R "$APP_PATH" Payload/
-          zip -qry VoidBrowser-unsigned.ipa Payload
-          ls -lh VoidBrowser-unsigned.ipa
+          zip -qry Aero-unsigned.ipa Payload
+          ls -lh Aero-unsigned.ipa
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: VoidBrowser-ipa-unsigned
-          path: VoidBrowser-unsigned.ipa
+          name: Aero-ipa-unsigned
+          path: Aero-unsigned.ipa
           if-no-files-found: error
