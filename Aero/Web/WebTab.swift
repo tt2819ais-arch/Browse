@@ -141,7 +141,25 @@ final class WebTab: NSObject, ObservableObject, Identifiable, WKNavigationDelega
     }
 
     // MARK: - Navigation API
-    func load(_ url: URL) { isHome = false; webView.load(URLRequest(url: url)) }
+    func load(_ url: URL) { isHome = false; pendingURL = nil; webView.load(URLRequest(url: url)) }
+
+    /// A restored-but-not-yet-loaded URL; loaded lazily when the tab is first shown.
+    var pendingURL: URL?
+
+    /// Configure this tab as a restored session tab (metadata shown, page loaded on activate).
+    func prepareRestored(url: String, title: String) {
+        self.isHome = false
+        self.urlString = url
+        self.title = title.isEmpty ? URLBuilder.prettyHost(url) : title
+        self.pendingURL = URL(string: url)
+    }
+
+    /// Load the pending URL if this tab was restored and never opened yet.
+    func activate() {
+        guard let u = pendingURL else { return }
+        pendingURL = nil
+        webView.load(URLRequest(url: u))
+    }
     func loadRaw(_ raw: String, engine: SearchEngine) {
         guard let url = URLBuilder.make(from: raw, engine: engine) else { return }
         load(url)

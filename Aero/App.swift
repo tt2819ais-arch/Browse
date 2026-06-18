@@ -9,6 +9,7 @@ struct AeroApp: App {
     @StateObject private var adblock = AdBlockStore()
     @StateObject private var proxies = ProxyStore()
     @StateObject private var favorites = FavoriteStore()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
@@ -22,6 +23,9 @@ struct AeroApp: App {
                 .environmentObject(favorites)
                 .preferredColorScheme(settings.theme.colorScheme)
                 .onAppear { browser.attach(settings: settings, adblock: adblock, proxies: proxies) }
+        }
+        .onChange(of: scenePhase) { phase in
+            if phase == .background || phase == .inactive { browser.saveSession() }
         }
     }
 }

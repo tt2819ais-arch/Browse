@@ -331,6 +331,7 @@ struct RootView: View {
         for tab in browser.tabs {
             tab.onCommit = { [weak history, weak browser] t in
                 if browser?.incognito == false { history?.record(title: t.title, url: t.urlString) }
+                browser?.saveSession()
             }
         }
         if browser.current?.desktopWanted != settings.desktopMode {

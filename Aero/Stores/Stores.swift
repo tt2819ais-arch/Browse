@@ -263,7 +263,41 @@ final class BrowserStore: ObservableObject {
 
     var current: WebTab? { tabs.first { $0.id == currentID } }
 
-    init() { newTab(select: true) }
+    private let sessionKey = "session.v1"
+    private struct SavedTab: Codable { let url: String; let title: String }
+    private struct SavedSession: Codable { let tabs: [SavedTab]; let active: Int }
+
+    init() {
+        if !restoreSession() { newTab(select: true) }
+    }
+
+    // MARK: - Session persistence (normal tabs only; incognito never saved)
+    func saveSession() {
+        guard !incognito else { return }  // don't overwrite the normal session while incognito
+        let saved = tabs.compactMap { t -> SavedTab? in
+            guard !t.isHome, let u = URL(string: t.urlString), u.scheme?.hasPrefix("http") == true else { return nil }
+            return SavedTab(url: t.urlString, title: t.title)
+        }
+        let activeIdx = tabs.firstIndex { $0.id == currentID } ?? 0
+        let session = SavedSession(tabs: saved, active: min(activeIdx, max(0, saved.count - 1)))
+        if let data = try? JSONEncoder().encode(session) { UserDefaults.standard.set(data, forKey: sessionKey) }
+    }
+
+    @discardableResult
+    private func restoreSession() -> Bool {
+        guard let data = UserDefaults.standard.data(forKey: sessionKey),
+              let session = try? JSONDecoder().decode(SavedSession.self, from: data),
+              !session.tabs.isEmpty else { return false }
+        for saved in session.tabs {
+            let tab = makeTab()
+            tab.prepareRestored(url: saved.url, title: saved.title)
+            tabs.append(tab)
+        }
+        let idx = min(max(0, session.active), tabs.count - 1)
+        currentID = tabs[idx].id
+        current?.activate()
+        return true
+    }
 
     func attach(settings: SettingsStore, adblock: AdBlockStore, proxies: ProxyStore) {
         self.settings = settings
@@ -283,6 +317,7 @@ final class BrowserStore: ObservableObject {
     }
 
     private func observeCurrent() {
+        current?.activate()
         tabObserver = current?.objectWillChange.sink { [weak self] in
             DispatchQueue.main.async { self?.objectWillChange.send() }
         }
@@ -314,21 +349,28 @@ final class BrowserStore: ObservableObject {
         }
     }
 
-    @discardableResult
-    func newTab(select: Bool = true, load url: URL? = nil) -> WebTab {
+    /// Build a configured tab (callbacks + privacy/proxy config) without appending it.
+    private func makeTab() -> WebTab {
         let tab = WebTab(incognito: incognito, desktopMode: settings?.desktopMode ?? false)
         tab.onCreateTab = { [weak self] u in self?.newTab(select: true, load: u) }
         tab.onReportPick = { [weak self] host, selector, text in
             self?.pendingReport = PendingReport(host: host, selector: selector, text: text)
         }
         applyConfig(to: tab)
-        tabs.append(tab)
-        if select { currentID = tab.id }
-        if let url { tab.load(url) }
         return tab
     }
 
-    func select(_ tab: WebTab) { current?.captureSnapshot(); currentID = tab.id }
+    @discardableResult
+    func newTab(select: Bool = true, load url: URL? = nil) -> WebTab {
+        let tab = makeTab()
+        tabs.append(tab)
+        if select { currentID = tab.id }
+        if let url { tab.load(url) }
+        saveSession()
+        return tab
+    }
+
+    func select(_ tab: WebTab) { current?.captureSnapshot(); currentID = tab.id; saveSession() }
 
     /// URLs of currently open (non-home) tabs — used by export.
     var openTabURLs: [String] {
@@ -360,6 +402,7 @@ final class BrowserStore: ObservableObject {
         tabs.remove(at: idx)
         if tabs.isEmpty { newTab(select: true) }
         else if currentID == tab.id { currentID = tabs[max(0, idx - 1)].id }
+        saveSession()
     }
 
     func closeAll() {
@@ -372,10 +415,16 @@ final class BrowserStore: ObservableObject {
     // MARK: - Incognito
     func setIncognito(_ on: Bool) {
         guard on != incognito else { return }
+        if on { saveSession() }               // persist normal tabs before switching
         tabs.forEach { $0.stop() }
         tabs.removeAll()
+        currentID = nil
         incognito = on
-        newTab(select: true)
+        if on {
+            newTab(select: true)              // fresh incognito session
+        } else if !restoreSession() {         // bring normal tabs back
+            newTab(select: true)
+        }
     }
 
     // MARK: - Report mode
