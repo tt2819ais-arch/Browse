@@ -63,6 +63,7 @@ final class WebTab: NSObject, ObservableObject, Identifiable, WKNavigationDelega
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
         webView.scrollView.contentInsetAdjustmentBehavior = .never
+        webView.scrollView.keyboardDismissMode = .interactive
         webView.customUserAgent = desktopMode ? Self.desktopUA : nil
         webView.isOpaque = true
         webView.backgroundColor = .systemBackground

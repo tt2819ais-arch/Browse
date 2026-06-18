@@ -21,6 +21,12 @@ final class SettingsStore: ObservableObject {
     @Published var pCanvas: Bool { didSet { d.set(pCanvas, forKey: "pCanvas") } }
     @Published var pWebGL: Bool { didSet { d.set(pWebGL, forKey: "pWebGL") } }
     @Published var pAudio: Bool { didSet { d.set(pAudio, forKey: "pAudio") } }
+    @Published var pFonts: Bool { didSet { d.set(pFonts, forKey: "pFonts") } }
+    @Published var pRects: Bool { didSet { d.set(pRects, forKey: "pRects") } }
+    @Published var pTiming: Bool { didSet { d.set(pTiming, forKey: "pTiming") } }
+    @Published var pMedia: Bool { didSet { d.set(pMedia, forKey: "pMedia") } }
+    @Published var pBattery: Bool { didSet { d.set(pBattery, forKey: "pBattery") } }
+    @Published var pSensors: Bool { didSet { d.set(pSensors, forKey: "pSensors") } }
     @Published var pLanguage: Bool { didSet { d.set(pLanguage, forKey: "pLanguage") } }
     @Published var language: String { didSet { d.set(language, forKey: "language") } }
     @Published var pTimezone: Bool { didSet { d.set(pTimezone, forKey: "pTimezone") } }
@@ -44,6 +50,12 @@ final class SettingsStore: ObservableObject {
         pCanvas = d.bool(forKey: "pCanvas")
         pWebGL = d.bool(forKey: "pWebGL")
         pAudio = d.bool(forKey: "pAudio")
+        pFonts = d.bool(forKey: "pFonts")
+        pRects = d.bool(forKey: "pRects")
+        pTiming = d.bool(forKey: "pTiming")
+        pMedia = d.bool(forKey: "pMedia")
+        pBattery = d.bool(forKey: "pBattery")
+        pSensors = d.bool(forKey: "pSensors")
         pLanguage = d.bool(forKey: "pLanguage")
         language = d.string(forKey: "language") ?? "en-US"
         pTimezone = d.bool(forKey: "pTimezone")
@@ -61,19 +73,43 @@ final class SettingsStore: ObservableObject {
         c.canvasNoise = pCanvas || incognito
         c.webglSpoof = pWebGL || incognito
         c.audioNoise = pAudio || incognito
+        c.limitFonts = pFonts || incognito
+        c.rectsNoise = pRects                       // can affect layout-sensitive sites → manual only
+        c.reduceTiming = pTiming || incognito
+        c.hideMedia = pMedia || incognito
+        c.hideBattery = pBattery || incognito
+        c.blockSensors = pSensors || incognito
         c.spoofLanguage = pLanguage; c.language = language
         c.spoofTimezone = pTimezone; c.timezone = timezone
         c.spoofScreen = pScreen || incognito
         c.spoofGeo = pGeo; c.geoDeny = geoDeny
         c.blockWebRTC = pWebRTC || incognito
         c.hardenNavigator = pNavigator || incognito
-        c.enabled = c.canvasNoise || c.webglSpoof || c.audioNoise || c.spoofLanguage ||
+        c.enabled = c.canvasNoise || c.webglSpoof || c.audioNoise || c.limitFonts || c.rectsNoise ||
+                    c.reduceTiming || c.hideMedia || c.hideBattery || c.blockSensors || c.spoofLanguage ||
                     c.spoofTimezone || c.spoofScreen || c.spoofGeo || c.blockWebRTC || c.hardenNavigator
         return c
     }
 
     var anyPrivacyOn: Bool {
-        pCanvas || pWebGL || pAudio || pLanguage || pTimezone || pScreen || pGeo || pWebRTC || pNavigator
+        pCanvas || pWebGL || pAudio || pFonts || pRects || pTiming || pMedia || pBattery || pSensors ||
+        pLanguage || pTimezone || pScreen || pGeo || pWebRTC || pNavigator
+    }
+
+    /// Count of enabled fingerprint protections (for the UI summary).
+    var privacyOnCount: Int {
+        [pCanvas, pWebGL, pAudio, pFonts, pRects, pTiming, pMedia, pBattery, pSensors,
+         pLanguage, pTimezone, pScreen, pGeo, pWebRTC, pNavigator].filter { $0 }.count
+    }
+    static let privacyTotal = 15
+
+    /// Enable/disable every protection at once. `rects` stays off by default (layout-sensitive).
+    func setAllPrivacy(_ on: Bool, includeRects: Bool = false) {
+        pCanvas = on; pWebGL = on; pAudio = on; pFonts = on
+        pTiming = on; pMedia = on; pBattery = on; pSensors = on
+        pScreen = on; pWebRTC = on; pNavigator = on
+        pLanguage = on; pTimezone = on; pGeo = on
+        pRects = on && includeRects
     }
 
     static let languageOptions = ["en-US", "en-GB", "de-DE", "fr-FR", "es-ES", "it-IT", "ja-JP", "ru-RU"]

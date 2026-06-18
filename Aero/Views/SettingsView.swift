@@ -85,7 +85,7 @@ struct SettingsView: View {
 
                         // About
                         GroupCard(title: "О приложении") {
-                            NavigationLink { HelpView() } label: { navLabel("info.circle", "Справка и о приложении", value: "v1.2") }
+                            NavigationLink { HelpView() } label: { navLabel("info.circle", "Справка и о приложении", value: "v1.3") }
                         }
 
                         Spacer().frame(height: 30)

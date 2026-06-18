@@ -22,16 +22,58 @@ struct PrivacyView: View {
                     .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(AeroColor.accentSoft))
                     .padding(.horizontal, 16)
 
+                    // Master "max protection" card
+                    VStack(spacing: 12) {
+                        HStack(spacing: 10) {
+                            Image(systemName: "shield.lefthalf.filled").font(.system(size: 18)).foregroundStyle(AeroColor.accent)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Максимальная защита").font(.system(size: 15, weight: .semibold)).foregroundStyle(AeroColor.textPrimary)
+                                Text("Включено \(settings.privacyOnCount) из \(SettingsStore.privacyTotal)").font(.system(size: 12)).foregroundStyle(AeroColor.textSecondary)
+                            }
+                            Spacer()
+                        }
+                        HStack(spacing: 10) {
+                            Button { Haptics.success(); settings.setAllPrivacy(true, includeRects: true); apply() } label: {
+                                Text("Включить всё").font(.system(size: 14, weight: .semibold)).foregroundStyle(.white)
+                                    .frame(maxWidth: .infinity).frame(height: 42)
+                                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(AeroColor.accent))
+                            }.buttonStyle(PressableStyle())
+                            Button { Haptics.tap(); settings.setAllPrivacy(false); apply() } label: {
+                                Text("Сбросить").font(.system(size: 14, weight: .semibold)).foregroundStyle(AeroColor.textPrimary)
+                                    .frame(maxWidth: .infinity).frame(height: 42)
+                                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(AeroColor.field))
+                            }.buttonStyle(PressableStyle())
+                        }
+                    }
+                    .padding(14)
+                    .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(AeroColor.card))
+                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(AeroColor.stroke, lineWidth: 1))
+                    .padding(.horizontal, 16)
+
                     GroupCard(title: "Отпечаток браузера") {
                         toggle("paintbrush.pointed.fill", "Защита Canvas", $settings.pCanvas, Self.canvasInfo)
                         RowDivider()
-                        toggle("cube.transparent", "Защита WebGL", $settings.pWebGL, Self.webglInfo)
+                        toggle("cube.transparent", "Защита WebGL / WebGPU", $settings.pWebGL, Self.webglInfo)
                         RowDivider()
                         toggle("waveform", "Защита Audio", $settings.pAudio, Self.audioInfo)
+                        RowDivider()
+                        toggle("textformat", "Защита шрифтов", $settings.pFonts, Self.fontsInfo)
                         RowDivider()
                         toggle("rectangle.on.rectangle", "Маскировать экран", $settings.pScreen, Self.screenInfo)
                         RowDivider()
                         toggle("cpu", "Маскировать систему", $settings.pNavigator, Self.navInfo)
+                    }
+
+                    GroupCard(title: "Дополнительно") {
+                        toggle("timer", "Снижать точность таймеров", $settings.pTiming, Self.timingInfo)
+                        RowDivider()
+                        toggle("ruler", "Защита геометрии элементов", $settings.pRects, Self.rectsInfo)
+                        RowDivider()
+                        toggle("mic.slash", "Скрыть медиаустройства", $settings.pMedia, Self.mediaInfo)
+                        RowDivider()
+                        toggle("battery.25", "Скрыть статус батареи", $settings.pBattery, Self.batteryInfo)
+                        RowDivider()
+                        toggle("gyroscope", "Блок датчиков движения", $settings.pSensors, Self.sensorsInfo)
                     }
 
                     GroupCard(title: "Сеть и местоположение") {
@@ -94,10 +136,16 @@ struct PrivacyView: View {
 
     // MARK: - Help texts
     static let canvasInfo = InfoItem(title: "Защита Canvas", text: "Сайты могут «рисовать» невидимую картинку и по мельчайшим отличиям рендеринга вычислять ваше устройство — это canvas-отпечаток. Защита добавляет незаметный шум, чтобы отпечаток менялся.", recommend: "Рекомендуем включить — почти не влияет на сайты.")
-    static let webglInfo = InfoItem(title: "Защита WebGL", text: "WebGL выдаёт модель видеокарты и драйвера. Защита подменяет эти данные на нейтральные (Apple GPU).", recommend: "Рекомендуем включить.")
-    static let audioInfo = InfoItem(title: "Защита Audio", text: "Аудио-движок браузера тоже уникален и используется для слежки. Защита добавляет микрошум в аудио-отпечаток.", recommend: "Рекомендуем включить.")
+    static let webglInfo = InfoItem(title: "Защита WebGL / WebGPU", text: "WebGL и WebGPU выдают модель видеокарты, драйвер и поддерживаемые расширения. Защита подменяет вендора/рендерер на нейтральные (Apple GPU), скрывает debug-расширение, добавляет шум в readPixels и отключает navigator.gpu.", recommend: "Рекомендуем включить.")
+    static let audioInfo = InfoItem(title: "Защита Audio", text: "Аудио-движок браузера уникален и используется для слежки. Защита добавляет микрошум в частотные и временные данные AnalyserNode и в AudioBuffer.", recommend: "Рекомендуем включить.")
+    static let fontsInfo = InfoItem(title: "Защита шрифтов", text: "Сайты определяют набор установленных шрифтов по ширине отрисованного текста (measureText) и проверкам document.fonts. Защита добавляет микрошум в измерения и ограничивает проверки системными шрифтами.", recommend: "Рекомендуем включить — на вид сайтов не влияет.")
+    static let timingInfo = InfoItem(title: "Снижение точности таймеров", text: "Высокоточные таймеры (performance.now, Date.now) позволяют замерять микрозадержки и строить отпечаток. Защита округляет время, снижая точность таких замеров.", recommend: "Безопасно, можно включить.")
+    static let rectsInfo = InfoItem(title: "Защита геометрии элементов", text: "getBoundingClientRect/getClientRects возвращают суб-пиксельные размеры, по которым тоже строят отпечаток. Защита добавляет крошечный шум.", recommend: "Может слегка влиять на сложные сайты — включайте при необходимости.")
+    static let mediaInfo = InfoItem(title: "Скрыть медиаустройства", text: "enumerateDevices() показывает камеры/микрофоны и их идентификаторы. Защита возвращает пустой список и блокирует захват экрана.", recommend: "Включите, если не пользуетесь камерой/микрофоном в браузере.")
+    static let batteryInfo = InfoItem(title: "Скрыть статус батареи", text: "Battery API сообщает уровень заряда и состояние — это редкий, но рабочий признак слежки. Защита делает API недоступным.", recommend: "Рекомендуем включить.")
+    static let sensorsInfo = InfoItem(title: "Блок датчиков движения", text: "Гироскоп, акселерометр и магнитометр выдают модель устройства и микродвижения. Защита отключает эти датчики и события движения.", recommend: "Включите, если сайтам не нужен наклон/движение устройства.")
     static let screenInfo = InfoItem(title: "Маскировать экран", text: "Размер и плотность экрана помогают вас отличить. Защита сообщает сайтам стандартные значения вместо реальных.", recommend: "Можно включить для большей анонимности.")
-    static let navInfo = InfoItem(title: "Маскировать систему", text: "Скрывает признаки автоматизации и нормализует число ядер, память и список плагинов, чтобы устройство выглядело типовым.", recommend: "Рекомендуем включить.")
+    static let navInfo = InfoItem(title: "Маскировать систему", text: "Нормализует navigator: число ядер, память, vendor/platform, productSub, doNotTrack, скрывает userAgentData, плагины, mimeTypes, нормализует тип сети и геймпады, убирает признак автоматизации (webdriver).", recommend: "Рекомендуем включить.")
     static let geoInfo = InfoItem(title: "Геолокация", text: "Контролирует доступ сайтов к вашему местоположению. «Запрет» — сайты получают отказ. «Подмена» — отдаётся выбранная точка вместо реальной.", recommend: "Запрет — самый приватный вариант.")
     static let rtcInfo = InfoItem(title: "Блокировка WebRTC", text: "WebRTC может раскрыть ваш реальный IP даже через VPN. Блокировка закрывает эту утечку. Важно: реальный IP полностью скрывает только VPN/прокси — браузер сам IP не меняет.", recommend: "Включите, если не пользуетесь видеозвонками в браузере.")
     static let langInfo = InfoItem(title: "Подмена языка сайтов", text: "Сайты видят выбранный язык (например, English), а интерфейс приложения остаётся на вашем родном языке. Полезно, чтобы не выдавать страну по языку.", recommend: "Включайте по желанию.")
