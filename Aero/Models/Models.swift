@@ -89,6 +89,85 @@ struct QuickLink: Identifiable {
     let tint: Color
 }
 
+// MARK: - Favorite (start page tile)
+struct Favorite: Identifiable, Codable, Equatable {
+    var id = UUID()
+    var title: String
+    var url: String
+}
+
+// MARK: - Proxy
+enum ProxyType: String, Codable, CaseIterable, Identifiable {
+    case http, https, socks5
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .http: return "HTTP"
+        case .https: return "HTTPS"
+        case .socks5: return "SOCKS5"
+        }
+    }
+}
+
+/// A user-supplied proxy server. Routes WKWebView traffic on iOS 17+.
+struct ProxyEntry: Identifiable, Codable, Equatable {
+    var id = UUID()
+    var label: String = ""
+    var type: ProxyType = .http
+    var host: String
+    var port: Int
+    var username: String = ""
+    var password: String = ""
+
+    var name: String { label.isEmpty ? "\(host):\(port)" : label }
+    var display: String { "\(type.title) · \(host):\(port)" }
+    var isValid: Bool { !host.isEmpty && port > 0 && port <= 65535 }
+
+    /// Parse one line into a ProxyEntry. Accepts:
+    ///  scheme://user:pass@host:port  |  scheme://host:port
+    ///  host:port:user:pass           |  host:port
+    static func parse(_ raw: String) -> ProxyEntry? {
+        var line = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !line.isEmpty, !line.hasPrefix("#") else { return nil }
+
+        var type: ProxyType = .http
+        // scheme prefix
+        if let r = line.range(of: "://") {
+            let scheme = line[line.startIndex..<r.lowerBound].lowercased()
+            switch scheme {
+            case "socks5", "socks", "socks5h": type = .socks5
+            case "https": type = .https
+            default: type = .http
+            }
+            line = String(line[r.upperBound...])
+        }
+
+        var user = "", pass = "", host = "", portStr = ""
+
+        if line.contains("@") {
+            // user:pass@host:port
+            let parts = line.split(separator: "@", maxSplits: 1).map(String.init)
+            let creds = parts[0].split(separator: ":", maxSplits: 1).map(String.init)
+            user = creds.first ?? ""
+            pass = creds.count > 1 ? creds[1] : ""
+            let hp = parts.count > 1 ? parts[1] : ""
+            let hpParts = hp.split(separator: ":").map(String.init)
+            host = hpParts.first ?? ""
+            portStr = hpParts.count > 1 ? hpParts[1] : ""
+        } else {
+            // host:port[:user:pass]
+            let parts = line.split(separator: ":").map(String.init)
+            guard parts.count >= 2 else { return nil }
+            host = parts[0]
+            portStr = parts[1]
+            if parts.count >= 4 { user = parts[2]; pass = parts[3] }
+        }
+
+        guard !host.isEmpty, let port = Int(portStr), port > 0, port <= 65535 else { return nil }
+        return ProxyEntry(type: type, host: host, port: port, username: user, password: pass)
+    }
+}
+
 // MARK: - URL helpers
 enum URLBuilder {
     /// Turn raw user input into a URL: detect if it's a URL or a search query.

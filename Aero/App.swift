@@ -7,6 +7,8 @@ struct AeroApp: App {
     @StateObject private var history = HistoryStore()
     @StateObject private var settings = SettingsStore()
     @StateObject private var adblock = AdBlockStore()
+    @StateObject private var proxies = ProxyStore()
+    @StateObject private var favorites = FavoriteStore()
 
     var body: some Scene {
         WindowGroup {
@@ -16,8 +18,10 @@ struct AeroApp: App {
                 .environmentObject(history)
                 .environmentObject(settings)
                 .environmentObject(adblock)
+                .environmentObject(proxies)
+                .environmentObject(favorites)
                 .preferredColorScheme(settings.theme.colorScheme)
-                .onAppear { browser.attach(settings: settings, adblock: adblock) }
+                .onAppear { browser.attach(settings: settings, adblock: adblock, proxies: proxies) }
         }
     }
 }

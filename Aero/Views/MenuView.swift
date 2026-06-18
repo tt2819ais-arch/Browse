@@ -7,11 +7,13 @@ struct MenuView: View {
     let onToggleBookmark: () -> Void
     let onNewTab: () -> Void
     let onShare: () -> Void
+    let onFind: () -> Void
     let onReportAd: () -> Void
     let onToggleIncognito: () -> Void
     let isIncognito: Bool
     let isBookmarked: Bool
     let canBookmark: Bool
+    let canFind: Bool
     let canReport: Bool
 
     var body: some View {
@@ -30,6 +32,8 @@ struct MenuView: View {
                 .padding(.horizontal, 16)
 
                 VStack(spacing: 0) {
+                    row(symbol: "text.magnifyingglass", title: "Найти на странице", enabled: canFind, action: onFind)
+                    RowDivider()
                     row(symbol: isIncognito ? "eyeglasses" : "eyeglasses",
                         title: isIncognito ? "Выйти из инкогнито" : "Режим инкогнито",
                         tint: isIncognito ? AeroColor.accent : AeroColor.textPrimary, action: onToggleIncognito)

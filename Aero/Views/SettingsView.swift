@@ -6,6 +6,7 @@ struct SettingsView: View {
     @EnvironmentObject var bookmarks: BookmarkStore
     @EnvironmentObject var history: HistoryStore
     @EnvironmentObject var adblock: AdBlockStore
+    @EnvironmentObject var proxies: ProxyStore
     @State private var clearedToast = false
 
     var body: some View {
@@ -52,6 +53,10 @@ struct SettingsView: View {
                             ToggleRow(symbol: "desktopcomputer", title: "Версия для ПК", subtitle: "Запрашивать десктоп-сайты", isOn: Binding(
                                 get: { settings.desktopMode },
                                 set: { settings.desktopMode = $0; browser.current?.applyDesktop($0) }))
+                            RowDivider()
+                            ToggleRow(symbol: "moon.stars.fill", title: "Тёмная тема для всех сайтов", subtitle: "Принудительное затемнение страниц", isOn: Binding(
+                                get: { settings.forceDark },
+                                set: { settings.forceDark = $0; browser.recompileAndReconfigure(reload: true) }))
                         }
 
                         // Privacy + ad block navigation
@@ -62,6 +67,10 @@ struct SettingsView: View {
                             RowDivider()
                             NavigationLink { AdBlockView().environmentObject(settings).environmentObject(adblock).environmentObject(browser) } label: {
                                 navLabel("shield.lefthalf.filled", "Блокировка рекламы", value: settings.adBlockEnabled ? "вкл" : "выкл")
+                            }
+                            RowDivider()
+                            NavigationLink { ProxyView().environmentObject(proxies).environmentObject(browser) } label: {
+                                navLabel("network", "Прокси и IP", value: proxies.enabled ? (proxies.active?.name ?? "вкл") : "выкл")
                             }
                         }
 
@@ -85,7 +94,7 @@ struct SettingsView: View {
 
                         // About
                         GroupCard(title: "О приложении") {
-                            NavigationLink { HelpView() } label: { navLabel("info.circle", "Справка и о приложении", value: "v1.3") }
+                            NavigationLink { HelpView() } label: { navLabel("info.circle", "Справка и о приложении", value: "v1.4") }
                         }
 
                         Spacer().frame(height: 30)

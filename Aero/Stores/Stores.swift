@@ -9,6 +9,7 @@ final class SettingsStore: ObservableObject {
     @Published var engine: SearchEngine { didSet { d.set(engine.rawValue, forKey: "searchEngine") } }
     @Published var theme: ThemeMode { didSet { d.set(theme.rawValue, forKey: "theme") } }
     @Published var desktopMode: Bool { didSet { d.set(desktopMode, forKey: "desktopMode") } }
+    @Published var forceDark: Bool { didSet { d.set(forceDark, forKey: "forceDark") } }
     @Published var wallpaper: String { didSet { d.set(wallpaper, forKey: "wallpaper") } }
     @Published var showWallpaper: Bool { didSet { d.set(showWallpaper, forKey: "showWallpaper") } }
 
@@ -41,6 +42,7 @@ final class SettingsStore: ObservableObject {
         engine = SearchEngine(rawValue: d.string(forKey: "searchEngine") ?? "") ?? .google
         theme = ThemeMode(rawValue: d.string(forKey: "theme") ?? "") ?? .system
         desktopMode = d.bool(forKey: "desktopMode")
+        forceDark = d.bool(forKey: "forceDark")
         wallpaper = d.string(forKey: "wallpaper") ?? "aero-01"
         showWallpaper = d.object(forKey: "showWallpaper") as? Bool ?? true
         adBlockEnabled = d.object(forKey: "adBlock") as? Bool ?? true
@@ -151,6 +153,50 @@ final class BookmarkStore: ObservableObject {
     }
 }
 
+// MARK: - Favorites store (start page tiles)
+final class FavoriteStore: ObservableObject {
+    @Published var items: [Favorite] = []
+    private let key = "favorites.v1"
+    private let seededKey = "favorites.seeded"
+
+    init() {
+        if let data = UserDefaults.standard.data(forKey: key),
+           let decoded = try? JSONDecoder().decode([Favorite].self, from: data) {
+            items = decoded
+        }
+        if !UserDefaults.standard.bool(forKey: seededKey) {
+            UserDefaults.standard.set(true, forKey: seededKey)
+            if items.isEmpty {
+                items = [
+                    Favorite(title: "Google", url: "https://google.com"),
+                    Favorite(title: "YouTube", url: "https://youtube.com"),
+                    Favorite(title: "Wikipedia", url: "https://wikipedia.org"),
+                    Favorite(title: "GitHub", url: "https://github.com"),
+                    Favorite(title: "Reddit", url: "https://reddit.com"),
+                    Favorite(title: "X", url: "https://x.com"),
+                    Favorite(title: "Telegram", url: "https://web.telegram.org"),
+                    Favorite(title: "Карты", url: "https://maps.google.com"),
+                ]
+                save()
+            }
+        }
+    }
+
+    private func save() { if let d = try? JSONEncoder().encode(items) { UserDefaults.standard.set(d, forKey: key) } }
+
+    func add(title: String, url: String) {
+        guard let u = URL(string: url.hasPrefix("http") ? url : "https://\(url)"), u.host != nil else { return }
+        let final = u.absoluteString
+        if items.contains(where: { $0.url == final }) { return }
+        let t = title.trimmingCharacters(in: .whitespaces)
+        items.insert(Favorite(title: t.isEmpty ? URLBuilder.prettyHost(final) : t, url: final), at: 0)
+        save()
+    }
+
+    func remove(_ fav: Favorite) { items.removeAll { $0.id == fav.id }; save() }
+    func remove(at offsets: IndexSet) { items.remove(atOffsets: offsets); save() }
+}
+
 // MARK: - History store
 final class HistoryStore: ObservableObject {
     @Published var items: [HistoryItem] = []
@@ -185,6 +231,13 @@ final class HistoryStore: ObservableObject {
     }
 }
 
+// MARK: - Recently closed tab
+struct ClosedTab: Identifiable, Equatable {
+    let id = UUID()
+    let title: String
+    let url: String
+}
+
 // MARK: - Pending ad report (awaiting user confirmation)
 struct PendingReport: Identifiable, Equatable {
     let id = UUID()
@@ -201,19 +254,32 @@ final class BrowserStore: ObservableObject {
     @Published var incognito = false
     @Published var reportMode = false
     @Published var pendingReport: PendingReport?
+    @Published var recentlyClosed: [ClosedTab] = []
 
     private var tabObserver: AnyCancellable?
     weak var settings: SettingsStore?
     weak var adblock: AdBlockStore?
+    weak var proxies: ProxyStore?
 
     var current: WebTab? { tabs.first { $0.id == currentID } }
 
     init() { newTab(select: true) }
 
-    func attach(settings: SettingsStore, adblock: AdBlockStore) {
+    func attach(settings: SettingsStore, adblock: AdBlockStore, proxies: ProxyStore) {
         self.settings = settings
         self.adblock = adblock
+        self.proxies = proxies
         recompileAndReconfigure(reload: false)
+        applyProxyToAll(reload: false)
+    }
+
+    /// Re-apply the active proxy to every tab (and optionally reload).
+    func applyProxyToAll(reload: Bool) {
+        let active = proxies?.active
+        for tab in tabs {
+            tab.applyProxy(active)
+            if reload, !tab.isHome { tab.reload() }
+        }
     }
 
     private func observeCurrent() {
@@ -227,7 +293,8 @@ final class BrowserStore: ObservableObject {
         guard let settings else { return }
         let cfg = settings.privacyConfig(incognito: incognito)
         let cosmetic = adblock?.cosmeticJS(enabled: settings.adBlockEnabled, cosmetic: settings.cosmeticEnabled) ?? ""
-        tab.configure(privacy: cfg, ruleLists: adblock?.ruleLists ?? [], cosmeticJS: cosmetic, adblockEnabled: settings.adBlockEnabled)
+        tab.configure(privacy: cfg, ruleLists: adblock?.ruleLists ?? [], cosmeticJS: cosmetic, adblockEnabled: settings.adBlockEnabled, forceDark: settings.forceDark)
+        tab.applyProxy(proxies?.active)
     }
 
     /// Re-apply current privacy/adblock config to all tabs (no recompile).
@@ -284,6 +351,11 @@ final class BrowserStore: ObservableObject {
 
     func close(_ tab: WebTab) {
         tab.stop()
+        if !tab.isHome, let u = URL(string: tab.urlString), u.scheme?.hasPrefix("http") == true {
+            recentlyClosed.removeAll { $0.url == tab.urlString }
+            recentlyClosed.insert(ClosedTab(title: tab.title, url: tab.urlString), at: 0)
+            if recentlyClosed.count > 10 { recentlyClosed = Array(recentlyClosed.prefix(10)) }
+        }
         guard let idx = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
         tabs.remove(at: idx)
         if tabs.isEmpty { newTab(select: true) }
@@ -321,7 +393,7 @@ final class BrowserStore: ObservableObject {
         // Refresh cosmetic script so the rule persists on future loads
         if let settings {
             let cosmetic = adblock.cosmeticJS(enabled: settings.adBlockEnabled, cosmetic: settings.cosmeticEnabled)
-            for tab in tabs { tab.configure(privacy: settings.privacyConfig(incognito: incognito), ruleLists: adblock.ruleLists, cosmeticJS: cosmetic, adblockEnabled: settings.adBlockEnabled) }
+            for tab in tabs { tab.configure(privacy: settings.privacyConfig(incognito: incognito), ruleLists: adblock.ruleLists, cosmeticJS: cosmetic, adblockEnabled: settings.adBlockEnabled, forceDark: settings.forceDark) }
         }
     }
 

@@ -28,6 +28,27 @@ struct PrivacyConfig {
 enum PrivacyScripts {
     static let reportHandler = "aeroReport"
 
+    /// Forces a dark appearance on every site via an inverting CSS filter.
+    /// Honest note: this is a universal filter (works on all sites) but on a few
+    /// layout-heavy pages colors may look slightly off — it's a toggle.
+    static let forceDarkJS = """
+    (function(){
+      try{
+        var ID='aero-force-dark';
+        function apply(){
+          if(document.getElementById(ID)) return;
+          var s=document.createElement('style');
+          s.id=ID;
+          s.textContent='html{filter:invert(1) hue-rotate(180deg)!important;background:#0e0e10!important;}'+
+            'img,video,picture,canvas,svg,iframe,embed,object,[style*="background-image"],[style*="background:url"]{filter:invert(1) hue-rotate(180deg)!important;}';
+          (document.head||document.documentElement).appendChild(s);
+        }
+        apply();
+        if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',apply);}
+      }catch(e){}
+    })();
+    """
+
     /// Build the anti-fingerprint / privacy JS for the given config.
     static func buildJS(_ c: PrivacyConfig) -> String {
         guard c.enabled else { return "" }

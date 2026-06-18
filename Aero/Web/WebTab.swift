@@ -28,12 +28,14 @@ final class WebTab: NSObject, ObservableObject, Identifiable, WKNavigationDelega
 
     private(set) var webView: WKWebView!
     private let ucc = WKUserContentController()
+    private let dataStore: WKWebsiteDataStore
     private var observers: [NSKeyValueObservation] = []
 
     // Cached config so newly added scripts survive reloads
     private var privacyConfig = PrivacyConfig()
     private var cosmeticScript: String = ""
     private var adblockEnabled = true
+    private var forceDark = false
     private var currentRuleLists: [WKContentRuleList] = []
 
     // Callbacks
@@ -44,6 +46,7 @@ final class WebTab: NSObject, ObservableObject, Identifiable, WKNavigationDelega
     init(incognito: Bool = false, desktopMode: Bool = false) {
         self.incognito = incognito
         self.desktopWanted = desktopMode
+        self.dataStore = incognito ? .nonPersistent() : .default()
         super.init()
 
         let config = WKWebViewConfiguration()
@@ -52,7 +55,7 @@ final class WebTab: NSObject, ObservableObject, Identifiable, WKNavigationDelega
         let prefs = WKWebpagePreferences()
         prefs.allowsContentJavaScript = true
         config.defaultWebpagePreferences = prefs
-        config.websiteDataStore = incognito ? .nonPersistent() : .default()
+        config.websiteDataStore = dataStore
         config.userContentController = ucc
 
         // Report-ad message handler (weak, no retain cycle)
@@ -62,6 +65,7 @@ final class WebTab: NSObject, ObservableObject, Identifiable, WKNavigationDelega
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
+        if #available(iOS 16.0, *) { webView.isFindInteractionEnabled = true }
         webView.scrollView.contentInsetAdjustmentBehavior = .never
         webView.scrollView.keyboardDismissMode = .interactive
         webView.customUserAgent = desktopMode ? Self.desktopUA : nil
@@ -86,10 +90,11 @@ final class WebTab: NSObject, ObservableObject, Identifiable, WKNavigationDelega
     }
 
     // MARK: - Privacy / Ad-block configuration
-    func configure(privacy: PrivacyConfig, ruleLists: [WKContentRuleList], cosmeticJS: String, adblockEnabled: Bool) {
+    func configure(privacy: PrivacyConfig, ruleLists: [WKContentRuleList], cosmeticJS: String, adblockEnabled: Bool, forceDark: Bool = false) {
         self.privacyConfig = privacy
         self.cosmeticScript = cosmeticJS
         self.adblockEnabled = adblockEnabled
+        self.forceDark = forceDark
         self.currentRuleLists = ruleLists
         rebuildUserContent()
     }
@@ -106,6 +111,19 @@ final class WebTab: NSObject, ObservableObject, Identifiable, WKNavigationDelega
         if !cosmeticScript.isEmpty {
             ucc.addUserScript(WKUserScript(source: cosmeticScript, injectionTime: .atDocumentStart, forMainFrameOnly: false))
         }
+        if forceDark {
+            ucc.addUserScript(WKUserScript(source: PrivacyScripts.forceDarkJS, injectionTime: .atDocumentEnd, forMainFrameOnly: false))
+        }
+    }
+
+    // MARK: - Proxy
+    func applyProxy(_ entry: ProxyEntry?) {
+        ProxyManager.apply(entry, to: dataStore)
+    }
+
+    // MARK: - Find in page
+    func presentFind() {
+        if #available(iOS 16.0, *) { webView.findInteraction?.presentFindNavigator(showingReplace: false) }
     }
 
     // MARK: - Report-ad mode

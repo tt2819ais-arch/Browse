@@ -12,11 +12,14 @@ struct RootView: View {
     @EnvironmentObject var history: HistoryStore
     @EnvironmentObject var settings: SettingsStore
     @EnvironmentObject var adblock: AdBlockStore
+    @EnvironmentObject var proxies: ProxyStore
 
     @State private var sheet: ActiveSheet?
     @State private var addressText = ""
     @FocusState private var addressFocused: Bool
     @State private var shareItem: ShareItem?
+
+    private var currentIndex: Int { browser.tabs.firstIndex { $0.id == browser.currentID } ?? 0 }
 
     var body: some View {
         ZStack {
@@ -26,16 +29,22 @@ struct RootView: View {
                 // Content area (web / home) — always sits ABOVE the toolbar
                 ZStack {
                     ZStack {
-                        ForEach(browser.tabs) { tab in
+                        ForEach(Array(browser.tabs.enumerated()), id: \.element.id) { idx, tab in
                             Group {
                                 if tab.isHome {
-                                    HomeView(onOpen: { open($0) }).environmentObject(settings).environmentObject(browser)
+                                    HomeView(onOpen: { open($0) },
+                                             onSearch: { beginEditing() },
+                                             onBookmarks: { sheet = .bookmarks },
+                                             onHistory: { sheet = .history },
+                                             onSettings: { sheet = .settings },
+                                             onTabs: { browser.current?.captureSnapshot(); browser.showTabsOverview = true })
+                                        .environmentObject(settings).environmentObject(browser)
                                 } else {
                                     WebContainer(tab: tab, onPull: { tab.reload() })
                                 }
                             }
                             .opacity(tab.id == browser.currentID ? 1 : 0)
-                            .scaleEffect(tab.id == browser.currentID ? 1 : 0.98)
+                            .offset(x: CGFloat(idx - currentIndex) * UIScreen.main.bounds.width)
                             .allowsHitTesting(tab.id == browser.currentID)
                         }
                     }
@@ -64,7 +73,7 @@ struct RootView: View {
         .onChange(of: browser.currentID) { _ in wireCurrentTab() }
         .sheet(item: $sheet) { which in
             sheetView(which)
-                .presentationDetents(which == .menu ? [.height(420)] : [.large, .medium])
+                .presentationDetents(which == .menu ? [.height(470)] : [.large, .medium])
                 .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $browser.showTabsOverview) {
@@ -105,12 +114,26 @@ struct RootView: View {
         .gesture(
             DragGesture(minimumDistance: 24, coordinateSpace: .local)
                 .onEnded { value in
-                    if value.translation.height < -55 && abs(value.translation.width) < 80 {
+                    let dx = value.translation.width, dy = value.translation.height
+                    if dy < -50 && abs(dx) < 70 {
+                        // Swipe up → open tab switcher
                         Haptics.soft()
-                        withAnimation(AeroAnim.spring) { browser.newTab() }
+                        browser.current?.captureSnapshot()
+                        browser.showTabsOverview = true
+                    } else if abs(dx) > 60 && abs(dy) < 45 {
+                        // Horizontal swipe → switch tabs (Safari-like)
+                        if dx < 0 { switchTab(1) } else { switchTab(-1) }
                     }
                 }
         )
+    }
+
+    private func switchTab(_ delta: Int) {
+        let target = currentIndex + delta
+        guard target >= 0, target < browser.tabs.count else { return }
+        Haptics.soft()
+        browser.current?.captureSnapshot()
+        withAnimation(AeroAnim.snappy) { browser.currentID = browser.tabs[target].id }
     }
 
     private var incognitoPill: some View {
@@ -325,6 +348,7 @@ struct RootView: View {
         case .settings:
             SettingsView().environmentObject(settings).environmentObject(browser)
                 .environmentObject(bookmarks).environmentObject(history).environmentObject(adblock)
+                .environmentObject(proxies)
         case .menu:
             MenuView(
                 onBookmarks: { sheet = .bookmarks },
@@ -339,11 +363,16 @@ struct RootView: View {
                     if let s = browser.current?.urlString, let u = URL(string: s) { shareItem = ShareItem(url: u) }
                     sheet = nil
                 },
+                onFind: {
+                    sheet = nil
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { browser.current?.presentFind() }
+                },
                 onReportAd: { sheet = nil; DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { browser.setReportMode(true) } },
                 onToggleIncognito: { browser.setIncognito(!browser.incognito); sheet = nil },
                 isIncognito: browser.incognito,
                 isBookmarked: browser.current.map { bookmarks.contains($0.urlString) } ?? false,
                 canBookmark: !(browser.current?.isHome ?? true),
+                canFind: !(browser.current?.isHome ?? true),
                 canReport: !(browser.current?.isHome ?? true)
             )
         }
